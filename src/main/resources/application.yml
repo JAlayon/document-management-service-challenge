@@ -21,7 +21,6 @@ spring:
       max-request-size: 510MB
       # Always write to temp file on disk — never buffer upload in JVM heap
       file-size-threshold: 0B
-      location: ${java.io.tmpdir}
 
 minio:
   endpoint: ${MINIO_ENDPOINT:http://127.0.0.1:9000}
