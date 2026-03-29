@@ -37,6 +37,22 @@ services:
     networks:
       - batch_network
 
+  minio-init:
+    image: minio/mc
+    depends_on:
+      - minio
+    networks:
+      - batch_network
+    volumes:
+      - ./init-scripts/minio-init.sh:/minio-init.sh
+    entrypoint: [ "/bin/sh", "/minio-init.sh" ]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+
 
   # Include all the necessary settings to include a document management service in the stack
   # Remember to configure this service to limit the memory to 50MB
