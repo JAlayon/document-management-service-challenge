@@ -1,15 +1,19 @@
 package com.clara.ops.challenge.document_management_service_challenge.service;
 
+import com.clara.ops.challenge.document_management_service_challenge.dto.in.DocumentSearchFilters;
 import com.clara.ops.challenge.document_management_service_challenge.dto.in.UploadDocumentRequest;
 import com.clara.ops.challenge.document_management_service_challenge.dto.out.DocumentDownloadUrl;
+import com.clara.ops.challenge.document_management_service_challenge.dto.out.PaginatedDocumentResponse;
 import com.clara.ops.challenge.document_management_service_challenge.entity.Document;
 import com.clara.ops.challenge.document_management_service_challenge.error.DocumentAlreadyExistsException;
 import com.clara.ops.challenge.document_management_service_challenge.error.DocumentNotFoundException;
 import com.clara.ops.challenge.document_management_service_challenge.error.TooManyUploadsException;
 import com.clara.ops.challenge.document_management_service_challenge.mapper.DocumentMapper;
 import com.clara.ops.challenge.document_management_service_challenge.repository.DocumentRepository;
+import com.clara.ops.challenge.document_management_service_challenge.repository.DocumentSpecification;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -41,6 +45,25 @@ public class DocumentService {
         }
     }
 
+    public PaginatedDocumentResponse searchDocuments(DocumentSearchFilters filters, Pageable pageable) {
+        log.info("process=searchDocuments, status=started, user={}, fileName={}, page={}, size={}",
+                filters.user(), filters.fileName(), pageable.getPageNumber(), pageable.getPageSize());
+        try {
+            var spec = DocumentSpecification.withFilters(filters);
+            var page = documentRepository.findAll(spec, pageable);
+            log.info("process=searchDocuments, status=completed, user={}, fileName={}, page={}, size={}",
+                    filters.user(), filters.fileName(), pageable.getPageNumber(), pageable.getPageSize());
+            return DocumentMapper.toPaginateDocumentSearch(page);
+        } catch (Exception ex) {
+            log.error("process=searchDocuments, status=error, user={}, fileName={}, " +
+                            "page={}, size={}, error={}",
+                    filters.user(), filters.fileName(), pageable.getPageNumber(),
+                    pageable.getPageSize(),
+                    ex.getMessage());
+            throw ex;
+        }
+
+    }
 
     public DocumentDownloadUrl getDownloadUrl(String documentId) {
         log.info("process=getDownloadUrl, status=started, documentId={}", documentId);

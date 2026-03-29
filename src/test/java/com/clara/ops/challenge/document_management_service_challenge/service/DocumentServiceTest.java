@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import com.clara.ops.challenge.document_management_service_challenge.dto.in.DocumentSearchFilters;
 import com.clara.ops.challenge.document_management_service_challenge.dto.in.UploadDocumentRequest;
 import com.clara.ops.challenge.document_management_service_challenge.entity.Document;
 import com.clara.ops.challenge.document_management_service_challenge.error.DocumentAlreadyExistsException;
@@ -21,6 +22,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.mock.web.MockMultipartFile;
 
 
@@ -101,7 +107,7 @@ class DocumentServiceTest {
     }
 
     /**
-     * Verifies that a duplicate upload (same user and name) is rejected with {@link
+     * Verifies that a duplicate upload (same user and fileName) is rejected with {@link
      * DocumentAlreadyExistsException} before any storage or concurrency guard interaction.
      */
     @Test
@@ -115,6 +121,43 @@ class DocumentServiceTest {
                 .isInstanceOf(DocumentAlreadyExistsException.class);
 
         verifyNoInteractions(storageService, concurrencyGuard);
+    }
+
+    /**
+     * Verifies that {@link DocumentService#searchDocuments} returns the domain {@link Page} produced
+     * by the repository without modification.
+     */
+    @Test
+    void searchDocuments_returnsPageFromRepository() {
+        var doc = buildDocument("alice", "report.pdf", List.of("hr"));
+        Page<Document> pageResult = new PageImpl<>(List.of(doc), PageRequest.of(0, 20), 1);
+        when(documentRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(pageResult);
+
+        var filters = new DocumentSearchFilters("alice", null, null);
+        var result = documentService.searchDocuments(filters, PageRequest.of(0, 20));
+
+        assertThat(result.documents()).hasSize(1);
+        assertThat(result.documents().get(0).user()).isEqualTo("alice");
+        assertThat(result.metadata().totalItems()).isEqualTo(1);
+        assertThat(result.metadata().currentPage()).isZero();
+    }
+
+    /**
+     * Verifies that an empty filter object causes {@link DocumentService#searchDocuments} to return
+     * whatever the repository returns without adding extra predicates.
+     */
+    @Test
+    void searchDocuments_emptyFilters_returnsRepositoryPage() {
+        Page<Document> emptyPage = Page.empty();
+        when(documentRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(emptyPage);
+
+        var result =
+                documentService.searchDocuments(DocumentSearchFilters.empty(), PageRequest.of(0, 20));
+
+        assertThat(result.documents()).isEmpty();
+        assertThat(result.metadata().currentItems()).isZero();
     }
 
 
