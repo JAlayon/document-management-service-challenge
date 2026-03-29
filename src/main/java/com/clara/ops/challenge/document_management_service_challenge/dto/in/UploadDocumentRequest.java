@@ -1,4 +1,4 @@
-package com.clara.ops.challenge.document_management_service_challenge.dto;
+package com.clara.ops.challenge.document_management_service_challenge.dto.in;
 
 import jakarta.validation.constraints.NotBlank;
 

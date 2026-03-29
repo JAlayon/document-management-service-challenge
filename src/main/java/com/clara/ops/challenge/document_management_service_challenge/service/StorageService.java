@@ -1,14 +1,14 @@
 package com.clara.ops.challenge.document_management_service_challenge.service;
 
-import io.minio.BucketExistsArgs;
-import io.minio.MakeBucketArgs;
-import io.minio.MinioClient;
-import io.minio.PutObjectArgs;
+import io.minio.*;
+import io.minio.http.Method;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.util.concurrent.TimeUnit;
 
 
 @Slf4j
@@ -38,7 +38,25 @@ public class StorageService {
         } catch (Exception ex){
           log.error("process=uploadFile, status=failed, bucket={}, objectPath={}, " +
                   "error={}", bucketName, objectPath, ex.getMessage());
-          throw new RuntimeException(ex);
+          throw new RuntimeException("Error uploading file to storage: " + ex.getMessage(), ex);
+        }
+    }
+
+    public String getPresignedUrl(String documentId) {
+        log.info("process=getPresignedUrl, status=started, documentId={}", documentId);
+        try {
+            var url = minioClient.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
+                    .bucket(bucketName)
+                    .object(documentId)
+                    .method(Method.GET)
+                    .expiry(1, TimeUnit.HOURS)
+                    .build());
+
+            log.info("process=getPresignedUrl, status=completed, documentId={}", documentId);
+            return url;
+        } catch (Exception ex) {
+            log.error("process=getPresignedUrl, status=error,  documentId={}, error={}", documentId, ex.getMessage());
+            throw new RuntimeException("Error generating presigned url: " + ex.getMessage(), ex);
         }
     }
 

@@ -4,11 +4,18 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
-import com.clara.ops.challenge.document_management_service_challenge.dto.UploadDocumentRequest;
+import com.clara.ops.challenge.document_management_service_challenge.dto.in.UploadDocumentRequest;
+import com.clara.ops.challenge.document_management_service_challenge.entity.Document;
 import com.clara.ops.challenge.document_management_service_challenge.error.DocumentAlreadyExistsException;
+import com.clara.ops.challenge.document_management_service_challenge.error.DocumentNotFoundException;
 import com.clara.ops.challenge.document_management_service_challenge.error.TooManyUploadsException;
 import com.clara.ops.challenge.document_management_service_challenge.repository.DocumentRepository;
+
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -108,6 +115,64 @@ class DocumentServiceTest {
                 .isInstanceOf(DocumentAlreadyExistsException.class);
 
         verifyNoInteractions(storageService, concurrencyGuard);
+    }
+
+
+    /**
+     * Verifies that {@link DocumentService#getDownloadUrl} returns the raw pre-signed URL string
+     * from {@link StorageService}.
+     */
+    @Test
+    void getDownloadUrl_returnsPresignedUrlString() {
+        var id = UUID.randomUUID();
+        var doc = buildDocument("alice", "report.pdf", List.of());
+        doc.setStoragePath("alice/report.pdf");
+
+        when(documentRepository.findById(id)).thenReturn(Optional.of(doc));
+        when(storageService.getPresignedUrl("alice/report.pdf"))
+                .thenReturn("http://storage/presigned/alice/report.pdf");
+
+        var result = documentService.getDownloadUrl(id.toString());
+
+        assertThat(result.url()).isEqualTo("http://storage/presigned/alice/report.pdf");
+    }
+
+    /**
+     * Verifies that {@link DocumentService#getDownloadUrl} throws {@link DocumentNotFoundException}
+     * when the document does not exist.
+     */
+    @Test
+    void getDownloadUrl_documentNotFound_throwsDocumentNotFoundException() {
+        var id = UUID.randomUUID();
+        when(documentRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> documentService.getDownloadUrl(id.toString()))
+                .isInstanceOf(DocumentNotFoundException.class)
+                .hasMessageContaining(id.toString());
+    }
+
+    /**
+     * Verifies that a malformed UUID causes {@link DocumentService#getDownloadUrl} to throw an
+     * {@link IllegalArgumentException}.
+     */
+    @Test
+    void getDownloadUrl_invalidUuid_throwsIllegalArgumentException() {
+        assertThatThrownBy(() -> documentService.getDownloadUrl("not-a-uuid"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+
+    private Document buildDocument(String user, String name, List<String> tags) {
+        return Document.builder()
+                .id(UUID.randomUUID())
+                .user(user)
+                .fileName(name)
+                .tags(tags)
+                .storagePath(user + "/" + name)
+                .fileSize(1024L)
+                .fileType("application/pdf")
+                .createdAt(LocalDateTime.now())
+                .build();
     }
 
 }
