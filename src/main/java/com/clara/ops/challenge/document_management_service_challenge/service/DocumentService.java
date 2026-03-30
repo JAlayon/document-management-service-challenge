@@ -8,12 +8,13 @@ import com.clara.ops.challenge.document_management_service_challenge.dto.out.Pag
 import com.clara.ops.challenge.document_management_service_challenge.entity.Document;
 import com.clara.ops.challenge.document_management_service_challenge.error.DocumentAlreadyExistsException;
 import com.clara.ops.challenge.document_management_service_challenge.error.DocumentNotFoundException;
+import com.clara.ops.challenge.document_management_service_challenge.error.DocumentTooLargeException;
 import com.clara.ops.challenge.document_management_service_challenge.error.TooManyUploadsException;
 import com.clara.ops.challenge.document_management_service_challenge.mapper.DocumentMapper;
 import com.clara.ops.challenge.document_management_service_challenge.repository.DocumentRepository;
 import com.clara.ops.challenge.document_management_service_challenge.repository.DocumentSpecification;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -22,14 +23,27 @@ import java.util.UUID;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class DocumentService {
+
+    private final long MAX_SIZE_FILE_MB;
 
     private final StorageService storageService;
     private final DocumentRepository documentRepository;
     private final UploadConcurrencyGuard uploadConcurrencyGuard;
 
+    public DocumentService(StorageService storageService,
+                           DocumentRepository documentRepository,
+                           UploadConcurrencyGuard uploadConcurrencyGuard,
+                           @Value("${upload.max-size-file}") long maxFileSizeMb) {
+        this.storageService = storageService;
+        this.documentRepository = documentRepository;
+        this.uploadConcurrencyGuard = uploadConcurrencyGuard;
+        this.MAX_SIZE_FILE_MB = maxFileSizeMb * 1024 * 1024;
+    }
+
+
     public DocumentResponse uploadDocument(UploadDocumentRequest request, MultipartFile file) {
+        checkFileSize(file);
         checkForDuplicate(request);
         checkCapacity(request);
         log.info("process=uploadDocument, status=started, user={}, fileName={}", request.user(), request.fileName());
@@ -106,6 +120,12 @@ public class DocumentService {
             log.error("process=checkCapacity, status=rejected, user={}, fileName={}, reason=capacityExceeded",
                     request.user(), request.fileName());
             throw new TooManyUploadsException("Maximum concurrent uploads reached. Please try again later.");
+        }
+    }
+
+    private void checkFileSize(MultipartFile file) {
+        if (file.getSize() > MAX_SIZE_FILE_MB) {
+            throw new DocumentTooLargeException("File too large");
         }
     }
 }

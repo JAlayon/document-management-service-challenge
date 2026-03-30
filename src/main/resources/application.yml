@@ -1,5 +1,7 @@
 server:
   port: ${SERVER_PORT:8080}
+  tomcat:
+    max-swallow-size: 500MB
 
 spring:
   datasource:
@@ -30,3 +32,4 @@ minio:
 
 upload:
   max-concurrent: ${UPLOAD_MAX_CONCURRENT:10}
+  max-size-file: ${MAX_SIZE_FILE:500}
