@@ -11,6 +11,7 @@ import com.clara.ops.challenge.document_management_service_challenge.dto.in.Uplo
 import com.clara.ops.challenge.document_management_service_challenge.entity.Document;
 import com.clara.ops.challenge.document_management_service_challenge.error.DocumentAlreadyExistsException;
 import com.clara.ops.challenge.document_management_service_challenge.error.DocumentNotFoundException;
+import com.clara.ops.challenge.document_management_service_challenge.error.DocumentTooLargeException;
 import com.clara.ops.challenge.document_management_service_challenge.error.TooManyUploadsException;
 import com.clara.ops.challenge.document_management_service_challenge.repository.DocumentRepository;
 
@@ -197,6 +198,43 @@ class DocumentServiceTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    /**
+     * Verifies that a file whose size exceeds the configured maximum is rejected with
+     * {@link DocumentTooLargeException} before any duplicate check or storage interaction.
+     */
+    @Test
+    void uploadDocument_whenFileTooLarge_throwsDocumentTooLargeException() {
+        // Service was created with 500 MB limit; byte array below exceeds it
+        long oversizedBytes = 501L * 1024 * 1024;
+        var request = new UploadDocumentRequest("alice", "big.pdf", List.of());
+        var file = mock(org.springframework.web.multipart.MultipartFile.class);
+        when(file.getSize()).thenReturn(oversizedBytes);
+
+        assertThatThrownBy(() -> documentService.uploadDocument(request, file))
+                .isInstanceOf(DocumentTooLargeException.class);
+
+        verifyNoInteractions(storageService, concurrencyGuard);
+    }
+
+    /**
+     * Verifies that when {@link StorageService#uploadFile} throws the concurrency guard permit is
+     * still released via the {@code finally} block.
+     */
+    @Test
+    void uploadDocument_whenStorageFails_releasesPermit() {
+        var request = new UploadDocumentRequest("alice", "test.pdf", List.of());
+        var file = new MockMultipartFile("file", "test.pdf", "application/pdf", new byte[512]);
+
+        when(documentRepository.existsByUserAndFileName("alice", "test.pdf")).thenReturn(false);
+        when(concurrencyGuard.tryAcquire()).thenReturn(true);
+        when(storageService.uploadFile("alice", "test.pdf", file))
+                .thenThrow(new RuntimeException("storage error"));
+
+        assertThatThrownBy(() -> documentService.uploadDocument(request, file))
+                .isInstanceOf(RuntimeException.class);
+
+        verify(concurrencyGuard).release();
+    }
 
     private Document buildDocument(String user, String name, List<String> tags) {
         return Document.builder()
