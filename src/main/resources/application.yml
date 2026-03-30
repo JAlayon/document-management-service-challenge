@@ -41,3 +41,12 @@ minio:
 upload:
   max-concurrent: ${UPLOAD_MAX_CONCURRENT:10}
   max-size-file: ${MAX_SIZE_FILE:500}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: always

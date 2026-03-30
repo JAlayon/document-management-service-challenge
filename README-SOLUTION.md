@@ -11,6 +11,7 @@
 5. [Test Coverage](#test-coverage)
 6. [Handling the 50MB Constraint — Trade-offs](#handling-the-50mb-constraint--trade-offs)
 7. [Running the Stack](#running-the-stack)
+8. [Manual Testing](#manual-testing)
 
 ---
 
@@ -172,3 +173,61 @@ make clean
 ```
 
 The service is available at `http://localhost:8080` once the stack is up.
+
+---
+
+## Manual Testing
+
+### Health
+
+```bash
+curl http://localhost:8080/actuator/health
+```
+
+```json
+{
+  "status": "UP",
+  "components": {
+    "memory": {
+      "status": "UP",
+      "details": {
+        "used": "18 MB",
+        "free": "12 MB",
+        "total": "30 MB",
+        "max":   "42 MB",
+        "usagePercent": "42.9%"
+      }
+    },
+    ...
+  }
+}
+```
+
+The `memory` indicator reports `DOWN` when heap usage exceeds 90% (configurable via `health.memory.critical-threshold`).
+
+### Upload a document
+
+```bash
+curl -X POST http://localhost:8080/document-management/upload \
+  -F "file=@/path/to/file.pdf;type=application/pdf" \
+  -F "user=alice" \
+  -F "fileName=report.pdf" \
+  -F "tags=finance" \
+  -F "tags=2024"
+```
+
+Expected: `201 Created` with no body.
+
+### Search documents
+
+```bash
+curl -X POST http://localhost:8080/document-management/search \
+  -H "Content-Type: application/json" \
+  -d '{"user": "alice", "tags": ["finance"]}'
+```
+
+### Download a document
+
+```bash
+curl http://localhost:8080/document-management/download/{documentId}
+```
