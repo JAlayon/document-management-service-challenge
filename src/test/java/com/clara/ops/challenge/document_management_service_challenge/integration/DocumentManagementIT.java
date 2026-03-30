@@ -51,47 +51,6 @@ public class DocumentManagementIT extends BaseIT {
 
     @Autowired private TestRestTemplate restTemplate;
 
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
-
-    /**
-     * Builds a multipart upload request with a small in-memory PDF content, the given user, file
-     * name, and an optional list of tags.
-     */
-    private HttpEntity<MultiValueMap<String, Object>> buildUploadRequest(
-            String user, String fileName, String... tags) {
-        var headers = new HttpHeaders();
-        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-
-        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-        body.add(
-                "file",
-                new ByteArrayResource("%PDF-1.4 test content".getBytes()) {
-                    @Override
-                    public String getFilename() {
-                        return fileName + ".pdf";
-                    }
-                });
-        body.add("user", user);
-        body.add("fileName", fileName);
-        for (String tag : tags) {
-            body.add("tags", tag);
-        }
-        return new HttpEntity<>(body, headers);
-    }
-
-    /** Builds a JSON request entity for the search endpoint. */
-    private HttpEntity<DocumentSearchFilters> buildSearchRequest(DocumentSearchFilters filters) {
-        var headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        return new HttpEntity<>(filters, headers);
-    }
-
-    // -------------------------------------------------------------------------
-    // Upload — happy path
-    // -------------------------------------------------------------------------
-
     /**
      * Verifies that a valid multipart upload returns {@code 201 Created} with no body. This test
      * must run first to seed the document used by the search and download tests.
@@ -108,10 +67,6 @@ public class DocumentManagementIT extends BaseIT {
         assertEquals(HttpStatus.CREATED, response.getStatusCode());
         assertNull(response.getBody());
     }
-
-    // -------------------------------------------------------------------------
-    // Upload — error paths
-    // -------------------------------------------------------------------------
 
     /**
      * Verifies that uploading the same user + file name combination a second time returns {@code
@@ -234,9 +189,6 @@ public class DocumentManagementIT extends BaseIT {
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Search — happy paths
-    // -------------------------------------------------------------------------
 
     /**
      * Verifies that searching by {@code user} returns the previously uploaded document and captures
@@ -340,10 +292,6 @@ public class DocumentManagementIT extends BaseIT {
         assertEquals(0, response.getBody().metadata().totalItems());
     }
 
-    // -------------------------------------------------------------------------
-    // Download — happy path
-    // -------------------------------------------------------------------------
-
     /**
      * Verifies that requesting a download URL for an existing document returns {@code 200 OK} with a
      * non-blank presigned URL. Depends on {@link #searchDocuments_shouldReturnDocument_filteredByUser()}
@@ -364,10 +312,6 @@ public class DocumentManagementIT extends BaseIT {
         assertNotNull(response.getBody().url());
         assertFalse(response.getBody().url().isBlank());
     }
-
-    // -------------------------------------------------------------------------
-    // Download — error paths
-    // -------------------------------------------------------------------------
 
     /**
      * Verifies that requesting a download URL for a well-formed but non-existent UUID returns
@@ -405,4 +349,33 @@ public class DocumentManagementIT extends BaseIT {
         assertEquals("DMS-006", response.getBody().get("code"));
         assertEquals(500, response.getBody().get("status"));
     }
+
+    private HttpEntity<MultiValueMap<String, Object>> buildUploadRequest(
+            String user, String fileName, String... tags) {
+        var headers = new HttpHeaders();
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add(
+                "file",
+                new ByteArrayResource("%PDF-1.4 test content".getBytes()) {
+                    @Override
+                    public String getFilename() {
+                        return fileName + ".pdf";
+                    }
+                });
+        body.add("user", user);
+        body.add("fileName", fileName);
+        for (String tag : tags) {
+            body.add("tags", tag);
+        }
+        return new HttpEntity<>(body, headers);
+    }
+
+    private HttpEntity<DocumentSearchFilters> buildSearchRequest(DocumentSearchFilters filters) {
+        var headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        return new HttpEntity<>(filters, headers);
+    }
+
 }
