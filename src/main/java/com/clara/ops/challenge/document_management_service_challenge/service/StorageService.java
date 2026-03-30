@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.InputStream;
 import java.util.concurrent.TimeUnit;
 
 
@@ -26,12 +27,13 @@ public class StorageService {
     public String uploadFile(String user, String fileName, MultipartFile file) {
         var objectPath = user + "/" + fileName;
         log.info("process=uploadFile, status=started, bucket={}, objectPath={}", bucketName, objectPath);
-        try {
+        try(InputStream inputStream = file.getInputStream()) {
             ensureBucketExists();
             minioClient.putObject(PutObjectArgs.builder()
                     .bucket(bucketName)
                     .object(objectPath)
-                    .stream(file.getInputStream(), file.getSize(), UPLOAD_PART_SIZE)
+                    .stream(inputStream, file.getSize(), UPLOAD_PART_SIZE)
+                    .contentType(file.getContentType())
                     .build());
             log.info("process=uploadFile, status=completed, bucket={}, objectPath={}", bucketName, objectPath);
             return objectPath;

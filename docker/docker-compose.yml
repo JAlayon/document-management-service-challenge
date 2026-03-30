@@ -8,7 +8,7 @@ services:
       - batch_network
     volumes:
       - challenge_postgresql_data:/bitnami/postgresql
-      - ./init-scripts:/docker-entrypoint-initdb.d
+      - ./init-scripts/db:/docker-entrypoint-initdb.d
     environment:
       - POSTGRESQL_USERNAME=${DB_USERNAME}
       - POSTGRESQL_PASSWORD=${DB_PASSWORD}
@@ -53,16 +53,38 @@ services:
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
       MINIO_BUCKET: ${MINIO_BUCKET}
 
-
-  # Include all the necessary settings to include a document management service in the stack
-  # Remember to configure this service to limit the memory to 50MB
-  # document-management-service:
-  #    environment:
-  #      - JAVA_OPTS=-Xmx50m -Xms50m
-  #    deploy:
-  #      resources:
-  #        limits:
-  #          memory: 50M
+  document-management-service:
+    image: document-management-service-challenge:0.0.1-SNAPSHOT
+    container_name: document_management_service
+    ports:
+      - "8080:8080"
+    command:
+      - -Dspring.aot.enabled=true
+    environment:
+      #- JAVA_OPTS=-Xmx50m -Xms50m -XX:MaxMetaspaceSize=100m -XX:ReservedCodeCacheSize=32m -XX:+UseSerialGC -Xss256k
+      - SERVER_PORT=8080
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_NAME=${DB_NAME}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - MINIO_BUCKET=${MINIO_BUCKET}
+      - UPLOAD_MAX_CONCURRENT=10
+      - MAX_SIZE_FILE=500
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    networks:
+      - batch_network
+    deploy:
+      resources:
+        limits:
+          memory: 50M
 
 volumes:
   challenge_postgresql_data:
