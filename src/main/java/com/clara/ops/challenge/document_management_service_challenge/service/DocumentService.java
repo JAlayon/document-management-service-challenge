@@ -3,7 +3,6 @@ package com.clara.ops.challenge.document_management_service_challenge.service;
 import com.clara.ops.challenge.document_management_service_challenge.dto.in.DocumentSearchFilters;
 import com.clara.ops.challenge.document_management_service_challenge.dto.in.UploadDocumentRequest;
 import com.clara.ops.challenge.document_management_service_challenge.dto.out.DocumentDownloadUrl;
-import com.clara.ops.challenge.document_management_service_challenge.dto.out.DocumentResponse;
 import com.clara.ops.challenge.document_management_service_challenge.dto.out.PaginatedDocumentResponse;
 import com.clara.ops.challenge.document_management_service_challenge.entity.Document;
 import com.clara.ops.challenge.document_management_service_challenge.error.DocumentAlreadyExistsException;
@@ -42,16 +41,15 @@ public class DocumentService {
     }
 
 
-    public DocumentResponse uploadDocument(UploadDocumentRequest request, MultipartFile file) {
+    public void uploadDocument(UploadDocumentRequest request, MultipartFile file) {
         checkFileSize(file);
         checkForDuplicate(request);
         checkCapacity(request);
         log.info("process=uploadDocument, status=started, user={}, fileName={}", request.user(), request.fileName());
         try {
-            var document = persistDocument(request, file);
+            persistDocument(request, file);
             log.info("process=uploadDocument, status=completed, user={}, fileName={}, fileSize={}",
                     request.user(), request.fileName(), file.getSize());
-            return DocumentMapper.toDocumentResponse(document);
         } catch (Exception ex) {
             log.error("process=uploadDocument, status=error, user={}, fileName={}, error={}",
                     request.user(), request.fileName(), ex.getMessage());

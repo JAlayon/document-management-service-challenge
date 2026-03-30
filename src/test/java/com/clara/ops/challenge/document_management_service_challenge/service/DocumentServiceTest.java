@@ -1,8 +1,6 @@
 package com.clara.ops.challenge.document_management_service_challenge.service;
 
 import static org.assertj.core.api.Assertions.*;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -67,7 +65,7 @@ class DocumentServiceTest {
             return document;
         });
 
-        var documentResponse = documentService.uploadDocument(request, file);
+        documentService.uploadDocument(request, file);
 
         verify(documentRepository)
                 .save(
@@ -77,8 +75,6 @@ class DocumentServiceTest {
                                                 && doc.getFileName().equals("test.pdf")
                                                 && doc.getStoragePath().equals("alice/test.pdf")
                                                 && doc.getTags().containsAll(List.of("finance", "2024"))));
-        assertNotNull(documentResponse);
-        assertEquals(documentResponse.id(), documentId.toString());
     }
 
 

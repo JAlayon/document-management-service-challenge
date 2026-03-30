@@ -1,6 +1,5 @@
 package com.clara.ops.challenge.document_management_service_challenge.integration;
 
-import com.clara.ops.challenge.document_management_service_challenge.dto.out.DocumentResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.client.TestRestTemplate;
@@ -17,7 +16,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 public class DocumentManagementIT extends BaseIT{
 
@@ -47,11 +45,10 @@ public class DocumentManagementIT extends BaseIT{
 
         HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
 
-        ResponseEntity<DocumentResponse> response =
-                restTemplate.postForEntity("/document-management/upload", requestEntity, DocumentResponse.class);
+        ResponseEntity<Void> response =
+                restTemplate.postForEntity("/document-management/upload", requestEntity, Void.class);
 
         assertEquals(HttpStatus.CREATED, response.getStatusCode());
-        assertEquals(response.getBody().fileName(), filename);
     }
 
 
@@ -88,7 +85,6 @@ public class DocumentManagementIT extends BaseIT{
                     restTemplate.postForEntity("/document-management/upload", requestEntity, String.class);
 
             assertEquals(HttpStatus.PAYLOAD_TOO_LARGE, response.getStatusCode());
-            assertNotNull(response.getBody());
         } finally {
             Files.deleteIfExists(tempFile);
         }

@@ -10,6 +10,14 @@ build-native:
 test:
 	./mvnw verify
 
+## Check code formatting (Google Java Format via Spotless)
+lint:
+	./mvnw spotless:check
+
+## Auto-fix code formatting
+lint-fix:
+	./mvnw spotless:apply
+
 run:
 	$(COMPOSE) up -d
 

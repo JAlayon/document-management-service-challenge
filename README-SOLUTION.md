@@ -7,9 +7,10 @@
 1. [Solution Overview](#solution-overview)
 2. [Architecture](#architecture)
 3. [Database Design](#database-design)
-4. [Test Coverage](#test-coverage)
-5. [Handling the 50MB Constraint — Trade-offs](#handling-the-50mb-constraint--trade-offs)
-6. [Running the Stack](#running-the-stack)
+4. [Error Handling](#error-handling)
+5. [Test Coverage](#test-coverage)
+6. [Handling the 50MB Constraint — Trade-offs](#handling-the-50mb-constraint--trade-offs)
+7. [Running the Stack](#running-the-stack)
 
 ---
 
@@ -19,7 +20,7 @@ The service exposes three REST endpoints to manage PDF documents:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/document-management/upload` | Upload a PDF with metadata |
+| `POST` | `/document-management/upload` | Upload a PDF with metadata — returns `201` with no body |
 | `POST` | `/document-management/search` | Search documents with optional filters and pagination |
 | `GET` | `/document-management/download/{documentId}` | Get a temporary presigned download URL |
 
@@ -83,6 +84,30 @@ The schema is externalized in [`docker/init-scripts/db/schema-init.sql`](docker/
 Tags are stored in a separate table (rather than a JSON column or comma-separated string) to allow indexed filtering via a proper `JOIN` and to enforce uniqueness of (document, tag) pairs via the composite PK.
 
 Indexes on `username`, `file_name`, `created_at`, and `tag` cover all supported search filters.
+
+---
+
+## Error Handling
+
+All errors follow a uniform JSON structure returned by `GlobalExceptionHandler`:
+
+```json
+{
+  "code":      "DMS-001",
+  "message":   "Document not found with id: abc-123",
+  "status":    404,
+  "timestamp": "2024-06-01T12:00:00"
+}
+```
+
+| Code | HTTP Status | Meaning |
+|------|-------------|---------|
+| `DMS-001` | `404 Not Found` | The requested document does not exist |
+| `DMS-002` | `409 Conflict` | A document with the same user and file name already exists |
+| `DMS-003` | `413 Payload Too Large` | The uploaded file exceeds the maximum allowed size |
+| `DMS-004` | `429 Too Many Requests` | The concurrent-upload limit has been reached |
+| `DMS-005` | `400 Bad Request` | One or more request fields failed validation |
+| `DMS-006` | `500 Internal Server Error` | An unexpected error occurred (details are logged, not exposed) |
 
 ---
 

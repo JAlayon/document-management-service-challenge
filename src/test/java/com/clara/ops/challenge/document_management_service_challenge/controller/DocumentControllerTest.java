@@ -1,6 +1,5 @@
 package com.clara.ops.challenge.document_management_service_challenge.controller;
 
-import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -31,7 +30,9 @@ import org.springframework.test.web.servlet.MockMvc;
  * Unit tests for {@link DocumentController} using the Spring MVC test slice.
  *
  * <p>All service-layer dependencies are replaced by Mockito mocks so that only the controller's
- * request mapping, Bean Validation, and HTTP-status handling are exercised.
+ * request mapping, Bean Validation, HTTP-status handling, and error-code contract are exercised.
+ * Error responses are asserted against the {@link com.clara.ops.challenge.document_management_service_challenge.error.ApiErrorCode}
+ * catalogue to ensure the JSON contract stays stable.
  */
 @WebMvcTest(DocumentController.class)
 class DocumentControllerTest {
@@ -45,24 +46,16 @@ class DocumentControllerTest {
     /** Mock for the service layer injected into the controller under test. */
     @MockBean private DocumentService documentService;
 
+    // -------------------------------------------------------------------------
+    // Upload
+    // -------------------------------------------------------------------------
+
     /**
-     * Verifies that a well-formed multipart upload request returns HTTP 201 with the document DTO
-     * in the response body.
+     * Verifies that a well-formed multipart upload request returns HTTP 201 with no body.
      */
     @Test
     void uploadDocument_shouldReturnCreated_whenValidRequest() throws Exception {
         var file = new MockMultipartFile("file", "test.pdf", "application/pdf", new byte[1024]);
-        var response =
-                new DocumentResponse(
-                        "uuid-1",
-                        "alice",
-                        "test.pdf",
-                        List.of("tag1"),
-                        1024L,
-                        "application/pdf",
-                        "2024-01-01T00:00:00");
-
-        when(documentService.uploadDocument(any(), any())).thenReturn(response);
 
         mockMvc.perform(
                         multipart("/document-management/upload")
@@ -71,102 +64,137 @@ class DocumentControllerTest {
                                 .param("fileName", "test.pdf")
                                 .param("tags", "tag1"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.id").value("uuid-1"))
-                .andExpect(jsonPath("$.user").value("alice"))
-                .andExpect(jsonPath("$.fileName").value("test.pdf"));
+                .andExpect(jsonPath("$").doesNotExist());
     }
 
     /**
-     * Verifies that a missing {@code user} form field triggers HTTP 400 due to Bean Validation,
-     * and that the service is never called.
+     * Verifies that a missing {@code user} form field triggers HTTP 400 (DMS-005) due to Bean
+     * Validation, and that the service is never called.
      */
     @Test
-    void uploadDocument_shouldReturn400_whenUserIsMissing() throws Exception {
+    void uploadDocument_shouldReturn400WithDms005_whenUserIsMissing() throws Exception {
         var file = new MockMultipartFile("file", "test.pdf", "application/pdf", new byte[1024]);
 
         mockMvc.perform(
                         multipart("/document-management/upload")
                                 .file(file)
                                 .param("fileName", "test.pdf"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("DMS-005"))
+                .andExpect(jsonPath("$.status").value(400));
 
         verifyNoInteractions(documentService);
     }
 
     /**
-     * Verifies that a missing {@code fileName} form field triggers HTTP 400 due to Bean Validation,
-     * and that the service is never called.
+     * Verifies that a missing {@code fileName} form field triggers HTTP 400 (DMS-005) due to Bean
+     * Validation, and that the service is never called.
      */
     @Test
-    void uploadDocument_shouldReturn400_whenFileNameIsMissing() throws Exception {
+    void uploadDocument_shouldReturn400WithDms005_whenFileNameIsMissing() throws Exception {
         var file = new MockMultipartFile("file", "test.pdf", "application/pdf", new byte[1024]);
 
         mockMvc.perform(
                         multipart("/document-management/upload")
                                 .file(file)
                                 .param("user", "alice"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("DMS-005"))
+                .andExpect(jsonPath("$.status").value(400));
 
         verifyNoInteractions(documentService);
     }
 
     /**
      * Verifies that a {@link DocumentTooLargeException} thrown by the service is translated to HTTP
-     * 413 Payload Too Large.
+     * 413 (DMS-003) with the error code in the response body.
      */
     @Test
-    void uploadDocument_shouldReturn413_whenFileTooLarge() throws Exception {
+    void uploadDocument_shouldReturn413WithDms003_whenFileTooLarge() throws Exception {
         var file = new MockMultipartFile("file", "big.pdf", "application/pdf", new byte[1024]);
-        when(documentService.uploadDocument(any(), any()))
-                .thenThrow(new DocumentTooLargeException("File too large"));
+        doThrow(new DocumentTooLargeException("File too large"))
+                .when(documentService).uploadDocument(any(), any());
 
         mockMvc.perform(
                         multipart("/document-management/upload")
                                 .file(file)
                                 .param("user", "alice")
                                 .param("fileName", "big.pdf"))
-                .andExpect(status().isPayloadTooLarge());
+                .andExpect(status().isPayloadTooLarge())
+                .andExpect(jsonPath("$.code").value("DMS-003"))
+                .andExpect(jsonPath("$.status").value(413))
+                .andExpect(jsonPath("$.message").value("File too large"))
+                .andExpect(jsonPath("$.timestamp").exists());
     }
 
     /**
      * Verifies that a {@link DocumentAlreadyExistsException} thrown by the service is translated to
-     * HTTP 409 Conflict.
+     * HTTP 409 (DMS-002) with the error code in the response body.
      */
     @Test
-    void uploadDocument_shouldReturn409_whenDocumentAlreadyExists() throws Exception {
+    void uploadDocument_shouldReturn409WithDms002_whenDocumentAlreadyExists() throws Exception {
         var file = new MockMultipartFile("file", "test.pdf", "application/pdf", new byte[1024]);
-        when(documentService.uploadDocument(any(), any()))
-                .thenThrow(new DocumentAlreadyExistsException("Document already exists"));
+        doThrow(new DocumentAlreadyExistsException("Document already exists"))
+                .when(documentService).uploadDocument(any(), any());
 
         mockMvc.perform(
                         multipart("/document-management/upload")
                                 .file(file)
                                 .param("user", "alice")
                                 .param("fileName", "test.pdf"))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DMS-002"))
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.message").value("Document already exists"))
+                .andExpect(jsonPath("$.timestamp").exists());
     }
 
     /**
-     * Verifies that a {@link TooManyUploadsException} thrown by the service propagates out of the
-     * MockMvc request pipeline as an unhandled exception. Because no {@code @ResponseStatus}
-     * annotation is present, Spring MVC does not map it to a specific HTTP status; the exception
-     * wraps in a {@link org.springframework.web.util.NestedServletException} that bubbles up.
+     * Verifies that a {@link TooManyUploadsException} thrown by the service is translated to HTTP
+     * 429 (DMS-004) by {@link com.clara.ops.challenge.document_management_service_challenge.error.GlobalExceptionHandler}.
      */
     @Test
-    void uploadDocument_shouldPropagateException_whenTooManyUploads() {
+    void uploadDocument_shouldReturn429WithDms004_whenTooManyUploads() throws Exception {
         var file = new MockMultipartFile("file", "test.pdf", "application/pdf", new byte[1024]);
-        when(documentService.uploadDocument(any(), any()))
-                .thenThrow(new TooManyUploadsException("Too many concurrent uploads"));
+        doThrow(new TooManyUploadsException("Maximum concurrent uploads reached. Please try again later."))
+                .when(documentService).uploadDocument(any(), any());
 
-        assertThatThrownBy(
-                        () ->
-                                mockMvc.perform(
-                                        multipart("/document-management/upload")
-                                                .file(file)
-                                                .param("user", "alice")
-                                                .param("fileName", "test.pdf")))
-                .hasRootCauseInstanceOf(TooManyUploadsException.class);
+        mockMvc.perform(
+                        multipart("/document-management/upload")
+                                .file(file)
+                                .param("user", "alice")
+                                .param("fileName", "test.pdf"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("DMS-004"))
+                .andExpect(jsonPath("$.status").value(429))
+                .andExpect(jsonPath("$.timestamp").exists());
     }
+
+    /**
+     * Verifies that an unexpected {@link RuntimeException} from the service is translated to HTTP
+     * 500 (DMS-006) without leaking the internal error message.
+     */
+    @Test
+    void uploadDocument_shouldReturn500WithDms006_whenUnexpectedErrorOccurs() throws Exception {
+        var file = new MockMultipartFile("file", "test.pdf", "application/pdf", new byte[1024]);
+        doThrow(new RuntimeException("Unexpected storage failure"))
+                .when(documentService).uploadDocument(any(), any());
+
+        mockMvc.perform(
+                        multipart("/document-management/upload")
+                                .file(file)
+                                .param("user", "alice")
+                                .param("fileName", "test.pdf"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.code").value("DMS-006"))
+                .andExpect(jsonPath("$.status").value(500))
+                .andExpect(jsonPath("$.message").value("An unexpected error occurred"))
+                .andExpect(jsonPath("$.timestamp").exists());
+    }
+
+    // -------------------------------------------------------------------------
+    // Search
+    // -------------------------------------------------------------------------
 
     /**
      * Verifies that the search endpoint returns HTTP 200 with the paginated document list and
@@ -220,6 +248,10 @@ class DocumentControllerTest {
                 .andExpect(jsonPath("$.documents").isEmpty());
     }
 
+    // -------------------------------------------------------------------------
+    // Download
+    // -------------------------------------------------------------------------
+
     /**
      * Verifies that the download endpoint returns HTTP 200 with the pre-signed URL in the body.
      */
@@ -236,15 +268,19 @@ class DocumentControllerTest {
 
     /**
      * Verifies that a {@link DocumentNotFoundException} thrown by the service is translated to HTTP
-     * 404 Not Found.
+     * 404 (DMS-001) with the error code in the response body.
      */
     @Test
-    void downloadDocument_shouldReturn404_whenDocumentNotFound() throws Exception {
+    void downloadDocument_shouldReturn404WithDms001_whenDocumentNotFound() throws Exception {
         var docId = "a3d2ef10-1234-4567-abcd-00000000abcd";
         when(documentService.getDownloadUrl(docId))
                 .thenThrow(new DocumentNotFoundException("Document not found with id: " + docId));
 
         mockMvc.perform(get("/document-management/download/{id}", docId))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("DMS-001"))
+                .andExpect(jsonPath("$.status").value(404))
+                .andExpect(jsonPath("$.message").value("Document not found with id: " + docId))
+                .andExpect(jsonPath("$.timestamp").exists());
     }
 }
