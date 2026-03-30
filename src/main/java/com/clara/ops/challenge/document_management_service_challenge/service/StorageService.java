@@ -17,7 +17,6 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 public class StorageService {
 
-    private static final long UPLOAD_PART_SIZE = 5 * 1024 * 1024;
     @Value("${minio.bucket}")
     private String bucketName;
 
@@ -32,7 +31,7 @@ public class StorageService {
             minioClient.putObject(PutObjectArgs.builder()
                     .bucket(bucketName)
                     .object(objectPath)
-                    .stream(inputStream, file.getSize(), UPLOAD_PART_SIZE)
+                    .stream(inputStream, file.getSize(), -1)
                     .contentType(file.getContentType())
                     .build());
             log.info("process=uploadFile, status=completed, bucket={}, objectPath={}", bucketName, objectPath);
