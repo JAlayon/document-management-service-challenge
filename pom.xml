@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+		 xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 	<parent>
 		<groupId>org.springframework.boot</groupId>
@@ -24,9 +24,10 @@
 
 		<spotless.maven.plugin.version>2.43.0</spotless.maven.plugin.version>
 		<googleJavaFormat.version>1.22.0</googleJavaFormat.version>
-
 		<minio.version>8.4.3</minio.version>
+		<testcontainers.version>1.20.1</testcontainers.version>
 	</properties>
+
 	<dependencies>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -59,7 +60,36 @@
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-validation</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-actuator</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>testcontainers</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>postgresql</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>minio</artifactId>
+			<version>${testcontainers.version}</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>junit-jupiter</artifactId>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
@@ -83,10 +113,51 @@
 					</annotationProcessorPaths>
 				</configuration>
 			</plugin>
+				<plugin>
+					<groupId>org.springframework.boot</groupId>
+					<artifactId>spring-boot-maven-plugin</artifactId>
+					<configuration>
+						<layers>
+							<enabled>true</enabled>
+						</layers>
+						<image>
+							<name>${project.artifact.name}:${project.version}</name>
+						</image>
+						<excludes>
+							<exclude>
+								<groupId>org.projectlombok</groupId>
+								<artifactId>lombok</artifactId>
+							</exclude>
+						</excludes>
+					</configuration>
+				</plugin>
 			<plugin>
-				<groupId>org.jacoco</groupId>
-				<artifactId>jacoco-maven-plugin</artifactId>
-				<version>0.8.8</version>
+				<groupId>org.graalvm.buildtools</groupId>
+				<artifactId>native-maven-plugin</artifactId>
+				<configuration>
+					<imageName>${project.artifact.name}-${project.version}</imageName>
+					<buildArgs>
+						<buildArg>--gc=serial</buildArg>
+						<buildArg>-R:MaximumHeapSizePercent=85</buildArg>
+					</buildArgs>
+				</configuration>
+			</plugin>
+			<!-- Required to allow AOT compilation to generate Hibernate/JPA entity proxy classes -->
+			<plugin>
+				<groupId>org.hibernate.orm.tooling</groupId>
+				<artifactId>hibernate-enhance-maven-plugin</artifactId>
+				<version>${hibernate.version}</version>
+				<executions>
+					<execution>
+						<phase>process-classes</phase>
+						<goals>
+							<goal>enhance</goal>
+						</goals>
+					</execution>
+				</executions>
+				<configuration>
+					<enableLazyInitialization>true</enableLazyInitialization>
+				</configuration>
 			</plugin>
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
@@ -103,6 +174,17 @@
 			<plugin>
 				<groupId>org.jacoco</groupId>
 				<artifactId>jacoco-maven-plugin</artifactId>
+				<version>0.8.8</version>
+				<configuration>
+					<!-- Exclude Spring Boot entry-point and pure infrastructure wiring
+					     that is not meaningful to unit-test. Lombok-generated methods
+					     are excluded automatically via lombok.config. -->
+					<excludes>
+						<exclude>**/*Application.class</exclude>
+						<exclude>**/config/MinioConfig.class</exclude>
+						<exclude>**/entity/Document.class</exclude>
+					</excludes>
+				</configuration>
 				<executions>
 					<execution>
 						<id>prepare-agent</id>
@@ -126,8 +208,8 @@
 				<configuration>
 					<java>
 						<includes>
-							<include>src/main/java/**/*.java</include>
-							<include>src/test/java/**/*.java</include>
+							<include>src/main/java/*/.java</include>
+							<include>src/test/java/*/.java</include>
 						</includes>
 						<googleJavaFormat>
 							<version>${googleJavaFormat.version}</version>
@@ -141,7 +223,7 @@
 
 					<markdown>
 						<includes>
-							<include>**/*.md</include>
+							<include>*/.md</include>
 						</includes>
 						<flexmark/>
 					</markdown>

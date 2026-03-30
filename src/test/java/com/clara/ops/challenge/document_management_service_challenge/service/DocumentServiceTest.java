@@ -1,0 +1,248 @@
+package com.clara.ops.challenge.document_management_service_challenge.service;
+
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+import com.clara.ops.challenge.document_management_service_challenge.dto.in.DocumentSearchFilters;
+import com.clara.ops.challenge.document_management_service_challenge.dto.in.UploadDocumentRequest;
+import com.clara.ops.challenge.document_management_service_challenge.entity.Document;
+import com.clara.ops.challenge.document_management_service_challenge.error.DocumentAlreadyExistsException;
+import com.clara.ops.challenge.document_management_service_challenge.error.DocumentNotFoundException;
+import com.clara.ops.challenge.document_management_service_challenge.error.DocumentTooLargeException;
+import com.clara.ops.challenge.document_management_service_challenge.error.TooManyUploadsException;
+import com.clara.ops.challenge.document_management_service_challenge.repository.DocumentRepository;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.mock.web.MockMultipartFile;
+
+@ExtendWith(MockitoExtension.class)
+class DocumentServiceTest {
+
+    @Mock private DocumentRepository documentRepository;
+    @Mock private StorageService storageService;
+    @Mock private UploadConcurrencyGuard concurrencyGuard;
+
+    private DocumentService documentService;
+    private UUID documentId;
+
+    @BeforeEach
+    void setUp() {
+        documentId = UUID.randomUUID();
+        documentService = new DocumentService(storageService, documentRepository, concurrencyGuard, 500L);
+    }
+
+    /**
+     * Verifies that {@link DocumentService#uploadDocument} delegates entity creation to the adapter
+     * and persists the result via the repository.
+     */
+    @Test
+    void uploadDocument_persistsDocumentBuiltFromRequest() {
+        var request = new UploadDocumentRequest("alice", "test.pdf", List.of("finance", "2024"));
+        var file = new MockMultipartFile("file", "test.pdf", "application/pdf", new byte[1024]);
+
+        when(documentRepository.existsByUserAndFileName("alice", "test.pdf")).thenReturn(false);
+        when(concurrencyGuard.tryAcquire()).thenReturn(true);
+        when(storageService.uploadFile("alice", "test.pdf", file)).thenReturn("alice/test.pdf");
+        when(documentRepository.save(any())).thenAnswer(inv -> {
+            Document document = inv.getArgument(0);
+            document.setId(documentId);
+            document.setCreatedAt(LocalDateTime.now());
+            return document;
+        });
+
+        documentService.uploadDocument(request, file);
+
+        verify(documentRepository)
+                .save(
+                        argThat(
+                                doc ->
+                                        doc.getUser().equals("alice")
+                                                && doc.getFileName().equals("test.pdf")
+                                                && doc.getStoragePath().equals("alice/test.pdf")
+                                                && doc.getTags().containsAll(List.of("finance", "2024"))));
+    }
+
+
+    /**
+     * Verifies that a request is rejected with {@link TooManyUploadsException} when the concurrency
+     * guard has no available slots.
+     */
+    @Test
+    void uploadDocument_whenAtCapacity_throwsTooManyUploadsException() {
+        var request = new UploadDocumentRequest("alice", "block.pdf", List.of());
+        var file = new MockMultipartFile("file", "block.pdf", "application/pdf", new byte[512]);
+
+        when(documentRepository.existsByUserAndFileName(anyString(), anyString())).thenReturn(false);
+        when(concurrencyGuard.tryAcquire()).thenReturn(false);
+
+        assertThatThrownBy(() -> documentService.uploadDocument(request, file))
+                .isInstanceOf(TooManyUploadsException.class);
+
+        verifyNoInteractions(storageService);
+    }
+
+    /**
+     * Verifies that a duplicate upload (same user and fileName) is rejected with {@link
+     * DocumentAlreadyExistsException} before any storage or concurrency guard interaction.
+     */
+    @Test
+    void uploadDocument_whenDuplicate_throwsDocumentAlreadyExistsException() {
+        var request = new UploadDocumentRequest("alice", "test.pdf", List.of());
+        var file = new MockMultipartFile("file", "test.pdf", "application/pdf", new byte[512]);
+
+        when(documentRepository.existsByUserAndFileName("alice", "test.pdf")).thenReturn(true);
+
+        assertThatThrownBy(() -> documentService.uploadDocument(request, file))
+                .isInstanceOf(DocumentAlreadyExistsException.class);
+
+        verifyNoInteractions(storageService, concurrencyGuard);
+    }
+
+    /**
+     * Verifies that {@link DocumentService#searchDocuments} returns the domain {@link Page} produced
+     * by the repository without modification.
+     */
+    @Test
+    void searchDocuments_returnsPageFromRepository() {
+        var doc = buildDocument("alice", "report.pdf", List.of("hr"));
+        Page<Document> pageResult = new PageImpl<>(List.of(doc), PageRequest.of(0, 20), 1);
+        when(documentRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(pageResult);
+
+        var filters = new DocumentSearchFilters("alice", null, null);
+        var result = documentService.searchDocuments(filters, PageRequest.of(0, 20));
+
+        assertThat(result.documents()).hasSize(1);
+        assertThat(result.documents().get(0).user()).isEqualTo("alice");
+        assertThat(result.metadata().totalItems()).isEqualTo(1);
+        assertThat(result.metadata().currentPage()).isZero();
+    }
+
+    /**
+     * Verifies that an empty filter object causes {@link DocumentService#searchDocuments} to return
+     * whatever the repository returns without adding extra predicates.
+     */
+    @Test
+    void searchDocuments_emptyFilters_returnsRepositoryPage() {
+        Page<Document> emptyPage = Page.empty();
+        when(documentRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(emptyPage);
+
+        var result =
+                documentService.searchDocuments(DocumentSearchFilters.empty(), PageRequest.of(0, 20));
+
+        assertThat(result.documents()).isEmpty();
+        assertThat(result.metadata().currentItems()).isZero();
+    }
+
+
+    /**
+     * Verifies that {@link DocumentService#getDownloadUrl} returns the raw pre-signed URL string
+     * from {@link StorageService}.
+     */
+    @Test
+    void getDownloadUrl_returnsPresignedUrlString() {
+        var id = UUID.randomUUID();
+        var doc = buildDocument("alice", "report.pdf", List.of());
+        doc.setStoragePath("alice/report.pdf");
+
+        when(documentRepository.findById(id)).thenReturn(Optional.of(doc));
+        when(storageService.getPresignedUrl("alice/report.pdf"))
+                .thenReturn("http://storage/presigned/alice/report.pdf");
+
+        var result = documentService.getDownloadUrl(id.toString());
+
+        assertThat(result.url()).isEqualTo("http://storage/presigned/alice/report.pdf");
+    }
+
+    /**
+     * Verifies that {@link DocumentService#getDownloadUrl} throws {@link DocumentNotFoundException}
+     * when the document does not exist.
+     */
+    @Test
+    void getDownloadUrl_documentNotFound_throwsDocumentNotFoundException() {
+        var id = UUID.randomUUID();
+        when(documentRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> documentService.getDownloadUrl(id.toString()))
+                .isInstanceOf(DocumentNotFoundException.class)
+                .hasMessageContaining(id.toString());
+    }
+
+    /**
+     * Verifies that a malformed UUID causes {@link DocumentService#getDownloadUrl} to throw an
+     * {@link IllegalArgumentException}.
+     */
+    @Test
+    void getDownloadUrl_invalidUuid_throwsIllegalArgumentException() {
+        assertThatThrownBy(() -> documentService.getDownloadUrl("not-a-uuid"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    /**
+     * Verifies that a file whose size exceeds the configured maximum is rejected with
+     * {@link DocumentTooLargeException} before any duplicate check or storage interaction.
+     */
+    @Test
+    void uploadDocument_whenFileTooLarge_throwsDocumentTooLargeException() {
+        // Service was created with 500 MB limit; byte array below exceeds it
+        long oversizedBytes = 501L * 1024 * 1024;
+        var request = new UploadDocumentRequest("alice", "big.pdf", List.of());
+        var file = mock(org.springframework.web.multipart.MultipartFile.class);
+        when(file.getSize()).thenReturn(oversizedBytes);
+
+        assertThatThrownBy(() -> documentService.uploadDocument(request, file))
+                .isInstanceOf(DocumentTooLargeException.class);
+
+        verifyNoInteractions(storageService, concurrencyGuard);
+    }
+
+    /**
+     * Verifies that when {@link StorageService#uploadFile} throws the concurrency guard permit is
+     * still released via the {@code finally} block.
+     */
+    @Test
+    void uploadDocument_whenStorageFails_releasesPermit() {
+        var request = new UploadDocumentRequest("alice", "test.pdf", List.of());
+        var file = new MockMultipartFile("file", "test.pdf", "application/pdf", new byte[512]);
+
+        when(documentRepository.existsByUserAndFileName("alice", "test.pdf")).thenReturn(false);
+        when(concurrencyGuard.tryAcquire()).thenReturn(true);
+        when(storageService.uploadFile("alice", "test.pdf", file))
+                .thenThrow(new RuntimeException("storage error"));
+
+        assertThatThrownBy(() -> documentService.uploadDocument(request, file))
+                .isInstanceOf(RuntimeException.class);
+
+        verify(concurrencyGuard).release();
+    }
+
+    private Document buildDocument(String user, String name, List<String> tags) {
+        return Document.builder()
+                .id(UUID.randomUUID())
+                .user(user)
+                .fileName(name)
+                .tags(tags)
+                .storagePath(user + "/" + name)
+                .fileSize(1024L)
+                .fileType("application/pdf")
+                .createdAt(LocalDateTime.now())
+                .build();
+    }
+
+}

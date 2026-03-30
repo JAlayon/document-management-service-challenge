@@ -1,0 +1,52 @@
+server:
+  port: ${SERVER_PORT:8080}
+  tomcat:
+    max-connections: 100
+    max-keep-alive-requests: 20
+    threads:
+      max: 15
+    accept-count: 20
+
+
+spring:
+  application:
+    name: document-management-service
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:challenge}
+    username: ${DB_USERNAME:challenge_user}
+    password: ${DB_PASSWORD:challenge_pass}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        default_schema: document_schema
+    show-sql: false
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 600MB
+      max-request-size: 600MB
+      # Always write to temp file on disk — never buffer upload in JVM heap
+      file-size-threshold: 0B
+      resolve-lazily: true
+
+minio:
+  endpoint: ${MINIO_ENDPOINT:http://127.0.0.1:9000}
+  access-key: ${MINIO_ACCESS_KEY}
+  secret-key: ${MINIO_SECRET_KEY}
+  bucket: ${MINIO_BUCKET:document-bucket}
+
+upload:
+  max-concurrent: ${UPLOAD_MAX_CONCURRENT:10}
+  max-size-file: ${MAX_SIZE_FILE:500}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: always

@@ -209,7 +209,7 @@ components:
           description: The user who uploaded the document.
         name:
           type: string
-          description: The document name.
+          description: The document fileName.
         tags:
           type: array
           description: The document tags.
@@ -226,7 +226,7 @@ components:
           nullable: true
         name:
           type: string
-          description: The document name.
+          description: The document fileName.
           nullable: true
         tags:
           type: array
@@ -248,7 +248,7 @@ components:
           description: The user who uploaded the document.
         name:
           type: string
-          description: The document name.
+          description: The document fileName.
         tags:
           type: array
           description: The document tags.

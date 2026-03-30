@@ -1,41 +1,90 @@
 services:
   postgresql:
     container_name: postgresql_container
-    image: bitnami/postgresql:15.4.0
+    image: bitnamilegacy/postgresql:15.4.0
     ports:
       - "5432:5432"
     networks:
       - batch_network
     volumes:
       - challenge_postgresql_data:/bitnami/postgresql
-      - ./init-scripts:/docker-entrypoint-initdb.d
+      - ./init-scripts/db:/docker-entrypoint-initdb.d
     environment:
-      - POSTGRESQL_USERNAME={CHANGE_ME}
-      - POSTGRESQL_PASSWORD={CHANGE_ME}
-      - POSTGRESQL_DATABASE=challenge
-      - POSTGRESQL_POSTGRES_PASSWORD={CHANGE_ME} # Password of user "postgres"
+      - POSTGRESQL_USERNAME=${DB_USERNAME}
+      - POSTGRESQL_PASSWORD=${DB_PASSWORD}
+      - POSTGRESQL_DATABASE=${DB_NAME}
+      - POSTGRESQL_POSTGRES_PASSWORD=${DB_POSTGRES_PASSWORD} # Password of user "postgres"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${DB_USERNAME} -d $${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
     container_name: minio
     restart: always
     ports:
       - "9000:9000"  # API S3
       - "9001:9001"  # MinIO Web Console
     environment:
-      MINIO_ROOT_USER: {CHANGE_ME}
-      MINIO_ROOT_PASSWORD: {CHANGE_ME}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     command: server --console-address ":9001" /data
     volumes:
       - challenge_minio_data:/data
-  # Include all the necessary settings to include a document management service in the stack
-  # Remember to configure this service to limit the memory to 50MB
-  # document-management-service:
-  #    environment:
-  #      - JAVA_OPTS=-Xmx50m -Xms50m
-  #    deploy:
-  #      resources:
-  #        limits:
-  #          memory: 50M
+    networks:
+      - batch_network
+
+  minio-init:
+    image: minio/mc
+    depends_on:
+      - minio
+    networks:
+      - batch_network
+    volumes:
+      - ./init-scripts/minio-init.sh:/minio-init.sh
+    entrypoint: [ "/bin/sh", "/minio-init.sh" ]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+
+  document-management-service:
+    image: document-management-service-challenge:0.0.1-SNAPSHOT
+    container_name: document_management_service
+    ports:
+      - "8080:8080"
+    command:
+      - -Dspring.aot.enabled=true
+    environment:
+      #- JAVA_OPTS=-Xmx50m -Xms50m -XX:MaxMetaspaceSize=100m -XX:ReservedCodeCacheSize=32m -XX:+UseSerialGC -Xss256k
+      - SERVER_PORT=8080
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_NAME=${DB_NAME}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - MINIO_BUCKET=${MINIO_BUCKET}
+      - UPLOAD_MAX_CONCURRENT=10
+      - MAX_SIZE_FILE=500
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    networks:
+      - batch_network
+    deploy:
+      resources:
+        limits:
+          memory: 50M
 
 volumes:
   challenge_postgresql_data:
